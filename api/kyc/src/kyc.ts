@@ -60,7 +60,7 @@ const MOCK_VERIFIED_WALLETS: Map<string, KYCRecord> = new Map([
       entity: "entity-basic-demo",
     },
   ],
-  // Deployer/Owner wallet — accredited (used in Sepolia tests)
+  // Deployer/Owner wallet (Party A in Sepolia tests) — accredited
   [
     "0x68905da737e5a11e3a93ab6cec2ea8b145fce961",
     {
@@ -68,6 +68,16 @@ const MOCK_VERIFIED_WALLETS: Map<string, KYCRecord> = new Map([
       verifiedAt: "2026-03-01T00:00:00Z",
       expiresAt: "2027-03-01T00:00:00Z",
       entity: "entity-deployer",
+    },
+  ],
+  // Party B wallet (Sepolia tests) — accredited
+  [
+    "0xfa8b848a0e0b5868d34357bf77a055782c69aaf1",
+    {
+      level: "accredited",
+      verifiedAt: "2026-03-01T00:00:00Z",
+      expiresAt: "2027-03-01T00:00:00Z",
+      entity: "entity-party-b-sepolia",
     },
   ],
   // Demo fail address — explicitly unverified
