@@ -20,6 +20,14 @@ import {TacitConstants} from "./libraries/TacitConstants.sol";
 contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
+    // ============ Internal Types for Report Decoding ============
+
+    /// @notice Report action types from CRE workflow
+    enum ReportAction {
+        Settle, // 0: Execute DvP settlement
+        Refund // 1: Refund both parties
+    }
+
     // ============ State Variables ============
 
     /// @notice The KeystoneForwarder address authorized to deliver CRE reports
@@ -190,11 +198,49 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     // ============ External Functions — IReceiver ============
 
     /// @inheritdoc IReceiver
+    /// @notice Process a settlement or refund report from the CRE workflow
+    /// @dev Called by KeystoneForwarder after verifying DON signatures.
+    ///      Decodes the report and executes atomic DvP settlement or mutual refund.
+    ///      CEI pattern: all checks and state changes happen before any external calls.
     function onReport(bytes calldata metadata, bytes calldata report) external override nonReentrant {
+        // CHECKS
         if (msg.sender != KEYSTONE_FORWARDER) revert OnlyForwarder();
-        // Settlement and refund logic implemented in Plan 1.2
-        // This function will decode the report and execute settle or refund
-        (metadata, report);
+        (metadata); // metadata contains workflow/DON IDs — not validated for hackathon scope
+
+        // Decode the report
+        (bytes32 tradeId, uint8 actionRaw, string memory reason) = abi.decode(report, (bytes32, uint8, string));
+
+        Trade storage trade = _trades[tradeId];
+
+        if (trade.status != TradeStatus.BothDeposited) {
+            revert InvalidTradeStatus(tradeId, trade.status, TradeStatus.BothDeposited);
+        }
+
+        if (actionRaw == uint8(ReportAction.Settle)) {
+            _executeSettlement(trade, tradeId);
+        } else if (actionRaw == uint8(ReportAction.Refund)) {
+            _executeRefund(trade, tradeId, reason);
+        } else {
+            revert ZeroAmount(); // invalid action — reuse error to avoid adding new one for hackathon
+        }
+    }
+
+    // ============ Admin Functions ============
+
+    /// @notice Emergency function to rescue accidentally sent tokens (NOT trade deposits)
+    /// @dev Only callable by owner. Does not track escrowed balances — use with care.
+    /// @param token Token to rescue (address(0) for ETH)
+    /// @param to Recipient address
+    /// @param amount Amount to rescue
+    function rescueTokens(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ETHTransferFailed(address(0), amount);
+
+        if (token == address(0)) {
+            (bool success,) = to.call{value: amount}("");
+            if (!success) revert ETHTransferFailed(to, amount);
+        } else {
+            IERC20(token).safeTransfer(to, amount);
+        }
     }
 
     // ============ External Functions — View ============
@@ -214,6 +260,83 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     /// @return count The total trade count
     function tradeCount() external view returns (uint256 count) {
         count = _tradeCount;
+    }
+
+    // ============ Internal Functions ============
+
+    /// @notice Execute atomic DvP settlement: Party A's deposit -> Party B, Party B's deposit -> Party A
+    /// @dev Follows CEI: state change first, then all transfers. If any transfer fails, entire tx reverts.
+    /// @param trade Storage pointer to the trade
+    /// @param tradeId The trade identifier (for events)
+    function _executeSettlement(Trade storage trade, bytes32 tradeId) internal {
+        // EFFECTS — state change before any external calls
+        trade.status = TradeStatus.Settled;
+
+        // Cache values to avoid multiple storage reads
+        address partyADepositor = trade.partyA.depositor;
+        address partyBDepositor = trade.partyB.depositor;
+        address tokenA = trade.partyA.token;
+        address tokenB = trade.partyB.token;
+        uint256 amountA = trade.partyA.amount;
+        uint256 amountB = trade.partyB.amount;
+
+        emit TradeSettled(tradeId);
+
+        // INTERACTIONS — DvP: Party A's assets -> Party B, Party B's assets -> Party A
+
+        // Transfer Party A's deposit to Party B
+        if (tokenA == address(0)) {
+            (bool successA,) = partyBDepositor.call{value: amountA}("");
+            if (!successA) revert ETHTransferFailed(partyBDepositor, amountA);
+        } else {
+            IERC20(tokenA).safeTransfer(partyBDepositor, amountA);
+        }
+
+        // Transfer Party B's deposit to Party A
+        if (tokenB == address(0)) {
+            (bool successB,) = partyADepositor.call{value: amountB}("");
+            if (!successB) revert ETHTransferFailed(partyADepositor, amountB);
+        } else {
+            IERC20(tokenB).safeTransfer(partyADepositor, amountB);
+        }
+    }
+
+    /// @notice Execute mutual refund: return each party's deposit to their originating address
+    /// @dev Follows CEI: state change first, then transfers.
+    /// @param trade Storage pointer to the trade
+    /// @param tradeId The trade identifier (for events)
+    /// @param reason The reason for refund (compliance failure, parameter mismatch, etc.)
+    function _executeRefund(Trade storage trade, bytes32 tradeId, string memory reason) internal {
+        // EFFECTS — state change before any external calls
+        trade.status = TradeStatus.Refunded;
+
+        // Cache values
+        address partyADepositor = trade.partyA.depositor;
+        address partyBDepositor = trade.partyB.depositor;
+        address tokenA = trade.partyA.token;
+        address tokenB = trade.partyB.token;
+        uint256 amountA = trade.partyA.amount;
+        uint256 amountB = trade.partyB.amount;
+
+        emit TradeRefunded(tradeId, reason);
+
+        // INTERACTIONS — return each party's deposit
+
+        // Refund Party A
+        if (tokenA == address(0)) {
+            (bool successA,) = partyADepositor.call{value: amountA}("");
+            if (!successA) revert ETHTransferFailed(partyADepositor, amountA);
+        } else {
+            IERC20(tokenA).safeTransfer(partyADepositor, amountA);
+        }
+
+        // Refund Party B
+        if (tokenB == address(0)) {
+            (bool successB,) = partyBDepositor.call{value: amountB}("");
+            if (!successB) revert ETHTransferFailed(partyBDepositor, amountB);
+        } else {
+            IERC20(tokenB).safeTransfer(partyBDepositor, amountB);
+        }
     }
 
     // ============ Receive ============
