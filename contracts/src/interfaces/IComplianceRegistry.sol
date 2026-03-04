@@ -11,9 +11,9 @@ interface IComplianceRegistry {
     /// @notice A compliance attestation for a trade
     /// @dev Minimal by design — privacy is paramount. No amounts, no assets, no identities.
     struct Attestation {
-        bool verified;       // Whether compliance verification passed
-        bool exists;         // Whether an attestation exists for this trade
-        uint256 timestamp;   // When the compliance check was performed
+        bool verified; // Whether compliance verification passed
+        bool exists; // Whether an attestation exists for this trade
+        uint256 timestamp; // When the compliance check was performed
     }
 
     // ============ Events ============
@@ -22,11 +22,7 @@ interface IComplianceRegistry {
     /// @param tradeId The unique trade identifier
     /// @param result Whether compliance passed (true) or failed (false)
     /// @param timestamp When the check was performed
-    event ComplianceVerified(
-        bytes32 indexed tradeId,
-        bool result,
-        uint256 timestamp
-    );
+    event ComplianceVerified(bytes32 indexed tradeId, bool result, uint256 timestamp);
 
     // ============ Errors ============
 

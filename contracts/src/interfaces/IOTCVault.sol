@@ -11,33 +11,33 @@ interface IOTCVault {
     /// @notice States of a trade in the settlement lifecycle
     /// @dev State machine: Created -> BothDeposited -> Settled | Refunded | Expired
     enum TradeStatus {
-        None,           // 0: Trade does not exist
-        Created,        // 1: Party A has deposited
-        BothDeposited,  // 2: Both parties have deposited, awaiting CRE workflow
-        Settled,        // 3: Trade settled successfully (DvP executed)
-        Refunded,       // 4: Trade refunded (compliance failed or parameter mismatch)
-        Expired         // 5: Trade expired (timeout reached before Party B deposited)
+        None, // 0: Trade does not exist
+        Created, // 1: Party A has deposited
+        BothDeposited, // 2: Both parties have deposited, awaiting CRE workflow
+        Settled, // 3: Trade settled successfully (DvP executed)
+        Refunded, // 4: Trade refunded (compliance failed or parameter mismatch)
+        Expired // 5: Trade expired (timeout reached before Party B deposited)
     }
 
     // ============ Structs ============
 
     /// @notice Represents one side of a trade deposit
     struct Deposit {
-        address depositor;           // Address that made the deposit
-        address token;               // Token address (address(0) for ETH)
-        uint256 amount;              // Amount deposited
-        bytes encryptedParams;       // Trade parameters encrypted with Vault DON public key
-        bool exists;                 // Whether this deposit exists
+        address depositor; // Address that made the deposit
+        address token; // Token address (address(0) for ETH)
+        uint256 amount; // Amount deposited
+        bytes encryptedParams; // Trade parameters encrypted with Vault DON public key
+        bool exists; // Whether this deposit exists
     }
 
     /// @notice Represents a complete trade between two counterparties
     struct Trade {
-        bytes32 tradeId;             // Unique trade identifier
-        Deposit partyA;              // Party A's deposit
-        Deposit partyB;              // Party B's deposit
-        TradeStatus status;          // Current trade status
-        uint256 createdAt;           // Timestamp of trade creation
-        uint256 expiresAt;           // Timestamp when trade expires if Party B hasn't deposited
+        bytes32 tradeId; // Unique trade identifier
+        Deposit partyA; // Party A's deposit
+        Deposit partyB; // Party B's deposit
+        TradeStatus status; // Current trade status
+        uint256 createdAt; // Timestamp of trade creation
+        uint256 expiresAt; // Timestamp when trade expires if Party B hasn't deposited
     }
 
     // ============ Events ============
@@ -47,24 +47,14 @@ interface IOTCVault {
     /// @param partyA Address of the trade creator
     /// @param token Token deposited (address(0) for ETH)
     /// @param amount Amount deposited
-    event TradeCreated(
-        bytes32 indexed tradeId,
-        address indexed partyA,
-        address token,
-        uint256 amount
-    );
+    event TradeCreated(bytes32 indexed tradeId, address indexed partyA, address token, uint256 amount);
 
     /// @notice Emitted when Party B matches a trade and deposits
     /// @param tradeId The unique trade identifier
     /// @param partyB Address of the matching counterparty
     /// @param token Token deposited (address(0) for ETH)
     /// @param amount Amount deposited
-    event TradeMatched(
-        bytes32 indexed tradeId,
-        address indexed partyB,
-        address token,
-        uint256 amount
-    );
+    event TradeMatched(bytes32 indexed tradeId, address indexed partyB, address token, uint256 amount);
 
     /// @notice Emitted when both parties have deposited, triggering the CRE workflow
     /// @param tradeId The unique trade identifier
@@ -126,12 +116,7 @@ interface IOTCVault {
     /// @param token ERC-20 token address to deposit
     /// @param amount Amount of tokens to deposit
     /// @param encryptedParams Trade parameters encrypted with Vault DON public key
-    function createTradeToken(
-        bytes32 tradeId,
-        address token,
-        uint256 amount,
-        bytes calldata encryptedParams
-    ) external;
+    function createTradeToken(bytes32 tradeId, address token, uint256 amount, bytes calldata encryptedParams) external;
 
     /// @notice Match an existing trade and deposit ETH as Party B
     /// @param tradeId Trade ID to match (received from Party A off-chain)
@@ -143,12 +128,7 @@ interface IOTCVault {
     /// @param token ERC-20 token address to deposit
     /// @param amount Amount of tokens to deposit
     /// @param encryptedParams Party B's trade parameters encrypted with Vault DON public key
-    function matchTradeToken(
-        bytes32 tradeId,
-        address token,
-        uint256 amount,
-        bytes calldata encryptedParams
-    ) external;
+    function matchTradeToken(bytes32 tradeId, address token, uint256 amount, bytes calldata encryptedParams) external;
 
     /// @notice Claim refund for an expired trade (only Party A can call after timeout)
     /// @param tradeId Trade ID of the expired trade
