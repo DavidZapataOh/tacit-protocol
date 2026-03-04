@@ -1,0 +1,11 @@
+name = "tacit-sanctions-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+[[kv_namespaces]]
+binding = "SANCTIONS_KV"
+id = "76eb8884dea4409587b02f5f3f545290"
+preview_id = "ffe5c075813d4689b97855f4481c8511"

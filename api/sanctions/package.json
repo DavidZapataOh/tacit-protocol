@@ -1,0 +1,20 @@
+{
+  "name": "tacit-sanctions-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tacit Protocol — OFAC SDN Sanctions Screening API (Cloudflare Worker)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "fetch-sdn": "npx tsx scripts/fetch-sdn.ts",
+    "upload-kv": "npx tsx scripts/upload-to-kv.ts",
+    "sync-ofac": "npm run fetch-sdn && npm run upload-kv"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.99.0"
+  }
+}
