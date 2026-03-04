@@ -39,9 +39,13 @@ case "$SCENARIO" in
         FUNC="sanctionsPath()"
         DESC="Sanctions failure (refund)"
         ;;
+    crosschain)
+        FUNC="crossChainPath()"
+        DESC="Cross-chain DvP (CCIP to Arb Sepolia)"
+        ;;
     *)
         echo "Unknown scenario: $SCENARIO"
-        echo "Available: happy, mismatch, sanctions"
+        echo "Available: happy, mismatch, sanctions, crosschain"
         exit 1
         ;;
 esac

@@ -1,0 +1,28 @@
+{
+  "chainId": 421614,
+  "chainName": "arbitrum-sepolia",
+  "contracts": {
+    "otcVaultReceiver": "0xDBB75Cbdf99C03D585c2879BCbedF99eeD270aC7"
+  },
+  "config": {
+    "deployer": "0x68905da737e5a11E3A93AB6CeC2eA8b145fce961",
+    "ccipRouter": "0x2a9C5afB0d0e4BAb2BCdaE109EC4b0c4Be15a165",
+    "linkToken": "0xb1D4538B4571d411F07960EF2838Ce337FE1E80E",
+    "chainSelector": "3478487238524512106"
+  },
+  "crossChain": {
+    "allowedSender": {
+      "chainSelector": "16015286601757825753",
+      "chainName": "sepolia",
+      "sender": "0xdcf70165b005e00fFdf904BACE94A560bff26358"
+    }
+  },
+  "deployment": {
+    "date": "2026-03-04",
+    "deployTxHash": "0x3f3bd83f511c760ddab0e8819b2f19fbbbe37d86b6215c76af9a9a4ff1a13c70",
+    "blockNumber": 246991292
+  },
+  "verification": {
+    "otcVaultReceiver": "https://sepolia.arbiscan.io/address/0xdbb75cbdf99c03d585c2879bcbedf99eed270ac7#code"
+  }
+}

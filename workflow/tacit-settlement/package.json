@@ -13,6 +13,7 @@
 		"trade:happy": "bash ../scripts/create-test-trade.sh happy",
 		"trade:mismatch": "bash ../scripts/create-test-trade.sh mismatch",
 		"trade:sanctions": "bash ../scripts/create-test-trade.sh sanctions",
+		"trade:crosschain": "bash ../scripts/create-test-trade.sh crosschain",
 		"secrets:upload": "cd .. && cre secrets upload -e .env",
 		"secrets:list": "cd .. && cre secrets list -e .env"
 	},

@@ -48,7 +48,10 @@ import {
 	IRECEIVER_ABI,
 	encodeSettlementReport,
 	encodeAttestationReport,
+	encodeCrossChainReport,
+	encodeSettlementInstruction,
 } from "./settlement";
+import { SEPOLIA_CHAIN_ID, CHAIN_ID_TO_CCIP_SELECTOR } from "./types";
 
 // ---------------------------------------------------------------------------
 // Event signature: BothPartiesDeposited(bytes32 indexed tradeId)
@@ -363,6 +366,53 @@ const onBothPartiesDeposited = (
 	// -----------------------------------------------------------------------
 	runtime.log("[Tacit] Step 6: Executing settlement + writing attestation...");
 
+	// Detect cross-chain: check if either party wants delivery on a different chain
+	const isCrossChain =
+		paramsA.destinationChain !== SEPOLIA_CHAIN_ID ||
+		paramsB.destinationChain !== SEPOLIA_CHAIN_ID;
+
+	if (isCrossChain) {
+		runtime.log("[Tacit] CROSS-CHAIN settlement detected");
+
+		// Determine which party wants cross-chain delivery and build instruction
+		// Party A wants Arb Sepolia → send Party B's deposit equivalent to Party A on Arb Sepolia
+		const crossChainParty = paramsA.destinationChain !== SEPOLIA_CHAIN_ID ? "A" : "B";
+		const destChainId = crossChainParty === "A"
+			? paramsA.destinationChain
+			: paramsB.destinationChain;
+		const destChainSelector = CHAIN_ID_TO_CCIP_SELECTOR[destChainId];
+
+		if (!destChainSelector) {
+			throw new Error(`[Tacit] Unsupported destination chain: ${destChainId}`);
+		}
+
+		// Recipient = the party who wants cross-chain delivery
+		// Amount = the counterparty's deposit (what recipient should receive in the swap)
+		const recipient = crossChainParty === "A" ? partyAAddress : partyBAddress;
+		const amount = crossChainParty === "A" ? trade.partyB.amount : trade.partyA.amount;
+
+		runtime.log(`[Tacit] Cross-chain party: ${crossChainParty} → chain ${destChainId}`);
+		runtime.log(`[Tacit] Recipient: ${recipient}, Amount: ${amount}`);
+
+		writeCrossChainReports(
+			runtime,
+			evmClient,
+			evmConfig,
+			tradeIdHex,
+			destChainSelector,
+			recipient as `0x${string}`,
+			amount,
+			true,
+		);
+
+		runtime.log(
+			`[Tacit] Workflow complete for trade ${tradeIdHex} — cross-chain settlement initiated`,
+		);
+		return "cross-chain-settlement-initiated";
+	}
+
+	// Same-chain settlement (existing flow)
+	runtime.log("[Tacit] Same-chain settlement");
 	writeReports(
 		runtime,
 		evmClient,
@@ -482,6 +532,116 @@ function writeReports(
 	);
 	runtime.log(
 		`[Tacit] Public sees ONLY: Trade ${tradeIdHex} | Compliance: ${compliancePassed ? "PASS" : "FAIL"}`,
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Cross-chain report writer — sends CCIP settlement + attestation
+// ---------------------------------------------------------------------------
+
+/**
+ * Write cross-chain settlement report to OTCVault (triggers CCIP send)
+ * and compliance attestation to ComplianceRegistry.
+ */
+function writeCrossChainReports(
+	runtime: Runtime<Config>,
+	evmClient: EVMClient,
+	evmConfig: Config["evms"][0],
+	tradeIdHex: `0x${string}`,
+	destChainSelector: bigint,
+	recipient: `0x${string}`,
+	amount: bigint,
+	compliancePassed: boolean,
+): void {
+	// -------------------------------------------------------------------
+	// Step 6a: Write cross-chain settlement report to OTCVault
+	// -------------------------------------------------------------------
+	runtime.log("[Tacit] Step 6a: Writing CROSS-CHAIN settlement report to OTCVault...");
+
+	// Build settlement instruction for the CCIP receiver (SettlementEncoder format)
+	const settlementPayload = encodeSettlementInstruction(
+		tradeIdHex,
+		recipient,
+		"0x0000000000000000000000000000000000000000" as `0x${string}`, // ETH
+		amount,
+	);
+
+	// Encode the full cross-chain report
+	const crossChainPayload = encodeCrossChainReport(
+		tradeIdHex,
+		destChainSelector,
+		settlementPayload,
+	);
+
+	runtime.log(`[Tacit] Cross-chain report: destSelector=${destChainSelector} recipient=${recipient}`);
+
+	const crossChainCallData = encodeFunctionData({
+		abi: IRECEIVER_ABI,
+		functionName: "onReport",
+		args: ["0x" as `0x${string}`, crossChainPayload],
+	});
+
+	const crossChainReport = runtime
+		.report(prepareReportRequest(crossChainCallData))
+		.result();
+	runtime.log("[Tacit] Cross-chain settlement report signed by DON");
+
+	const crossChainResp = evmClient
+		.writeReport(runtime, {
+			receiver: evmConfig.otcVaultAddress,
+			report: crossChainReport,
+		})
+		.result();
+
+	if (crossChainResp.txStatus !== TxStatus.SUCCESS) {
+		throw new Error(
+			`[Tacit] Cross-chain settlement report to OTCVault failed: ${crossChainResp.errorMessage}`,
+		);
+	}
+	runtime.log(
+		"[Tacit] Cross-chain settlement report written — CCIP message sent",
+	);
+
+	// -------------------------------------------------------------------
+	// Step 6b: Write compliance attestation to ComplianceRegistry
+	// -------------------------------------------------------------------
+	runtime.log("[Tacit] Step 6b: Writing compliance attestation...");
+
+	const timestamp = Math.floor(Date.now() / 1000);
+	const attestationPayload = encodeAttestationReport(
+		tradeIdHex,
+		compliancePassed,
+		timestamp,
+	);
+	runtime.log(
+		`[Tacit] Attestation: tradeId=${tradeIdHex} compliance=${compliancePassed ? "PASS" : "FAIL"} timestamp=${timestamp}`,
+	);
+
+	const attestationCallData = encodeFunctionData({
+		abi: IRECEIVER_ABI,
+		functionName: "onReport",
+		args: ["0x" as `0x${string}`, attestationPayload],
+	});
+
+	const attestationReport = runtime
+		.report(prepareReportRequest(attestationCallData))
+		.result();
+	runtime.log("[Tacit] Attestation report signed by DON");
+
+	const attestationResp = evmClient
+		.writeReport(runtime, {
+			receiver: evmConfig.complianceRegistryAddress,
+			report: attestationReport,
+		})
+		.result();
+
+	if (attestationResp.txStatus !== TxStatus.SUCCESS) {
+		throw new Error(
+			`[Tacit] Attestation report to ComplianceRegistry failed: ${attestationResp.errorMessage}`,
+		);
+	}
+	runtime.log(
+		"[Tacit] Attestation written to ComplianceRegistry via KeystoneForwarder",
 	);
 }
 

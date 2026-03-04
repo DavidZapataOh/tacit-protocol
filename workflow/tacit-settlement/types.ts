@@ -11,6 +11,7 @@ export enum TradeStatus {
   Settled = 3,
   Refunded = 4,
   Expired = 5,
+  CrossChainPending = 6,
 }
 
 /** Decrypted trade parameters (only visible inside TEE) */
@@ -63,3 +64,12 @@ export const CHAIN_CONFIG = {
     chainSelectorName: "ethereum-testnet-sepolia-arbitrum-1",
   },
 } as const;
+
+/** Sepolia chain ID — source chain for the OTCVault */
+export const SEPOLIA_CHAIN_ID = 11155111;
+
+/** Map chain IDs to CCIP chain selectors (bigint for ABI encoding) */
+export const CHAIN_ID_TO_CCIP_SELECTOR: Record<number, bigint> = {
+  11155111: BigInt("16015286601757825753"),   // Sepolia
+  421614: BigInt("3478487238524512106"),       // Arbitrum Sepolia
+};

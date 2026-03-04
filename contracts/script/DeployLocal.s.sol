@@ -24,7 +24,7 @@ contract DeployLocal is Script {
         ComplianceRegistry complianceRegistry = new ComplianceRegistry(deployer, deployer);
         console2.log("ComplianceRegistry:", address(complianceRegistry));
 
-        OTCVault otcVault = new OTCVault(deployer, deployer);
+        OTCVault otcVault = new OTCVault(deployer, deployer, address(0));
         console2.log("OTCVault:", address(otcVault));
 
         vm.stopBroadcast();

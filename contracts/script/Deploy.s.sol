@@ -40,7 +40,9 @@ contract Deploy is Script {
         console2.log("ComplianceRegistry deployed at:", address(complianceRegistry));
 
         // 2. Deploy OTCVault
-        otcVault = new OTCVault(keystoneForwarder, deployer);
+        address ccipRouter = vm.envOr("CCIP_ROUTER_SEPOLIA", address(0));
+        console2.log("CCIP Router:", ccipRouter);
+        otcVault = new OTCVault(keystoneForwarder, deployer, ccipRouter);
         console2.log("OTCVault deployed at:", address(otcVault));
 
         vm.stopBroadcast();

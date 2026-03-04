@@ -8,6 +8,8 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 import {IOTCVault} from "./interfaces/IOTCVault.sol";
 import {IReceiver} from "./interfaces/IReceiver.sol";
 import {TacitConstants} from "./libraries/TacitConstants.sol";
+import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
+import {IRouterClient} from "@chainlink/contracts-ccip/contracts/interfaces/IRouterClient.sol";
 
 /// @title OTCVault
 /// @author Tacit Protocol
@@ -24,8 +26,9 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
 
     /// @notice Report action types from CRE workflow
     enum ReportAction {
-        Settle, // 0: Execute DvP settlement
-        Refund // 1: Refund both parties
+        Settle, // 0: Execute same-chain DvP settlement
+        Refund, // 1: Refund both parties
+        CrossChainSettle // 2: Execute cross-chain DvP via CCIP
     }
 
     // ============ State Variables ============
@@ -33,20 +36,34 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     /// @notice The KeystoneForwarder address authorized to deliver CRE reports
     address public immutable KEYSTONE_FORWARDER;
 
+    /// @notice The CCIP Router contract for cross-chain messaging
+    IRouterClient public immutable CCIP_ROUTER;
+
     /// @notice Mapping from trade ID to trade data
     mapping(bytes32 => Trade) private _trades;
 
     /// @notice Counter of total trades created
     uint256 private _tradeCount;
 
+    /// @notice Allowed CCIP receiver contracts per destination chain
+    mapping(uint64 => address) public allowedReceivers;
+
+    /// @notice Mapping from CCIP message ID to trade ID for tracking
+    mapping(bytes32 => bytes32) public ccipMessageToTrade;
+
+    /// @notice Timestamp when a cross-chain settlement was initiated (for timeout)
+    mapping(bytes32 => uint256) public crossChainInitiatedAt;
+
     // ============ Constructor ============
 
     /// @notice Initialize the OTCVault
     /// @param keystoneForwarder Address of the KeystoneForwarder contract
     /// @param initialOwner Address of the contract owner (for admin functions)
-    constructor(address keystoneForwarder, address initialOwner) Ownable(initialOwner) {
+    /// @param ccipRouter Address of the CCIP Router contract (address(0) if no cross-chain)
+    constructor(address keystoneForwarder, address initialOwner, address ccipRouter) Ownable(initialOwner) {
         if (keystoneForwarder == address(0)) revert OnlyForwarder();
         KEYSTONE_FORWARDER = keystoneForwarder;
+        CCIP_ROUTER = IRouterClient(ccipRouter);
     }
 
     // ============ External Functions — Deposit ============
@@ -207,8 +224,10 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         if (msg.sender != KEYSTONE_FORWARDER) revert OnlyForwarder();
         (metadata); // metadata contains workflow/DON IDs — not validated for hackathon scope
 
-        // Decode the report
-        (bytes32 tradeId, uint8 actionRaw, string memory reason) = abi.decode(report, (bytes32, uint8, string));
+        // Decode the report — bytes data supports both string reasons and cross-chain data
+        // ABI encoding of (bytes32, uint8, string) and (bytes32, uint8, bytes) is identical,
+        // so existing same-chain reports decode correctly with this format.
+        (bytes32 tradeId, uint8 actionRaw, bytes memory data) = abi.decode(report, (bytes32, uint8, bytes));
 
         Trade storage trade = _trades[tradeId];
 
@@ -219,7 +238,9 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         if (actionRaw == uint8(ReportAction.Settle)) {
             _executeSettlement(trade, tradeId);
         } else if (actionRaw == uint8(ReportAction.Refund)) {
-            _executeRefund(trade, tradeId, reason);
+            _executeRefund(trade, tradeId, string(data));
+        } else if (actionRaw == uint8(ReportAction.CrossChainSettle)) {
+            _executeCrossChainSettlement(trade, tradeId, data);
         } else {
             revert ZeroAmount(); // invalid action — reuse error to avoid adding new one for hackathon
         }
@@ -337,6 +358,128 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         } else {
             IERC20(tokenB).safeTransfer(partyBDepositor, amountB);
         }
+    }
+
+    /// @notice Execute cross-chain DvP settlement via CCIP
+    /// @dev Called from onReport() when action = CrossChainSettle (2).
+    ///      Sends settlement instructions to the receiver on the destination chain.
+    ///      Trade transitions to CrossChainPending until CCIP delivers or timeout triggers refund.
+    /// @param trade Storage pointer to the trade
+    /// @param tradeId The trade identifier
+    /// @param data ABI-encoded (uint64 destChainSelector, bytes settlementData)
+    function _executeCrossChainSettlement(Trade storage trade, bytes32 tradeId, bytes memory data) internal {
+        (uint64 destChainSelector, bytes memory settlementData) = abi.decode(data, (uint64, bytes));
+
+        address receiver = allowedReceivers[destChainSelector];
+        if (receiver == address(0)) revert ReceiverNotConfigured(destChainSelector);
+
+        Client.EVM2AnyMessage memory message = _buildCCIPMessage(receiver, settlementData);
+        uint256 fees = CCIP_ROUTER.getFee(destChainSelector, message);
+        if (address(this).balance < fees) revert InsufficientCCIPFee(fees, address(this).balance);
+
+        // EFFECTS
+        trade.status = TradeStatus.CrossChainPending;
+        crossChainInitiatedAt[tradeId] = block.timestamp;
+
+        // INTERACTIONS
+        bytes32 messageId = CCIP_ROUTER.ccipSend{value: fees}(destChainSelector, message);
+        ccipMessageToTrade[messageId] = tradeId;
+
+        emit CrossChainSettlementSent(tradeId, messageId, destChainSelector);
+    }
+
+    // ============ CCIP Cross-Chain Functions ============
+
+    /// @inheritdoc IOTCVault
+    function setAllowedReceiver(uint64 chainSelector, address receiver) external onlyOwner {
+        if (receiver == address(0)) revert ZeroDeposit();
+        allowedReceivers[chainSelector] = receiver;
+    }
+
+    /// @inheritdoc IOTCVault
+    function estimateCCIPFee(uint64 destChainSelector, bytes calldata settlementData)
+        external
+        view
+        returns (uint256 fee)
+    {
+        address receiver = allowedReceivers[destChainSelector];
+        if (receiver == address(0)) revert ReceiverNotConfigured(destChainSelector);
+
+        Client.EVM2AnyMessage memory message = _buildCCIPMessage(receiver, settlementData);
+        fee = CCIP_ROUTER.getFee(destChainSelector, message);
+    }
+
+    /// @inheritdoc IOTCVault
+    function refundTimedOutCrossChain(bytes32 tradeId) external nonReentrant {
+        Trade storage trade = _trades[tradeId];
+
+        if (trade.status != TradeStatus.CrossChainPending) {
+            revert InvalidTradeStatus(tradeId, trade.status, TradeStatus.CrossChainPending);
+        }
+        if (block.timestamp < crossChainInitiatedAt[tradeId] + TacitConstants.CROSS_CHAIN_TIMEOUT) {
+            revert CrossChainNotTimedOut(tradeId);
+        }
+
+        _executeRefund(trade, tradeId, "cross-chain-timeout");
+    }
+
+    /// @notice Send cross-chain settlement instructions via CCIP
+    /// @dev Only callable by KeystoneForwarder as part of the CRE workflow settlement.
+    ///      The trade must be in BothDeposited status. After sending, status becomes CrossChainPending.
+    /// @param tradeId The trade being settled cross-chain
+    /// @param destChainSelector The CCIP chain selector for the destination chain
+    /// @param settlementData ABI-encoded settlement instructions for the receiver
+    /// @return messageId The CCIP message identifier for tracking
+    function sendCrossChainSettlement(bytes32 tradeId, uint64 destChainSelector, bytes calldata settlementData)
+        external
+        nonReentrant
+        returns (bytes32 messageId)
+    {
+        // CHECKS
+        if (msg.sender != KEYSTONE_FORWARDER) revert OnlyForwarder();
+
+        Trade storage trade = _trades[tradeId];
+        if (trade.status != TradeStatus.BothDeposited) {
+            revert InvalidTradeStatus(tradeId, trade.status, TradeStatus.BothDeposited);
+        }
+
+        address receiver = allowedReceivers[destChainSelector];
+        if (receiver == address(0)) revert ReceiverNotConfigured(destChainSelector);
+
+        Client.EVM2AnyMessage memory message = _buildCCIPMessage(receiver, settlementData);
+
+        uint256 fees = CCIP_ROUTER.getFee(destChainSelector, message);
+        if (address(this).balance < fees) revert InsufficientCCIPFee(fees, address(this).balance);
+
+        // EFFECTS
+        trade.status = TradeStatus.CrossChainPending;
+        crossChainInitiatedAt[tradeId] = block.timestamp;
+
+        // INTERACTIONS
+        messageId = CCIP_ROUTER.ccipSend{value: fees}(destChainSelector, message);
+        ccipMessageToTrade[messageId] = tradeId;
+
+        emit CrossChainSettlementSent(tradeId, messageId, destChainSelector);
+    }
+
+    /// @notice Build a CCIP message for cross-chain settlement (data-only, no token transfer)
+    /// @param receiver The receiver contract address on the destination chain
+    /// @param data The encoded settlement instructions
+    /// @return message The CCIP message struct
+    function _buildCCIPMessage(address receiver, bytes memory data)
+        internal
+        pure
+        returns (Client.EVM2AnyMessage memory message)
+    {
+        message = Client.EVM2AnyMessage({
+            receiver: abi.encode(receiver),
+            data: data,
+            tokenAmounts: new Client.EVMTokenAmount[](0),
+            extraArgs: Client._argsToBytes(
+                Client.GenericExtraArgsV2({gasLimit: TacitConstants.CCIP_GAS_LIMIT, allowOutOfOrderExecution: true})
+            ),
+            feeToken: address(0) // Pay fees in native ETH
+        });
     }
 
     // ============ Receive ============

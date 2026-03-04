@@ -9,14 +9,15 @@ interface IOTCVault {
     // ============ Enums ============
 
     /// @notice States of a trade in the settlement lifecycle
-    /// @dev State machine: Created -> BothDeposited -> Settled | Refunded | Expired
+    /// @dev State machine: Created -> BothDeposited -> Settled | Refunded | Expired | CrossChainPending -> Settled
     enum TradeStatus {
         None, // 0: Trade does not exist
         Created, // 1: Party A has deposited
         BothDeposited, // 2: Both parties have deposited, awaiting CRE workflow
         Settled, // 3: Trade settled successfully (DvP executed)
         Refunded, // 4: Trade refunded (compliance failed or parameter mismatch)
-        Expired // 5: Trade expired (timeout reached before Party B deposited)
+        Expired, // 5: Trade expired (timeout reached before Party B deposited)
+        CrossChainPending // 6: CCIP message sent, awaiting cross-chain confirmation
     }
 
     // ============ Structs ============
@@ -69,6 +70,12 @@ interface IOTCVault {
     /// @param reason The reason for refund
     event TradeRefunded(bytes32 indexed tradeId, string reason);
 
+    /// @notice Emitted when a cross-chain settlement message is sent via CCIP
+    /// @param tradeId The trade being settled cross-chain
+    /// @param messageId The CCIP message ID for tracking
+    /// @param destChainSelector The destination chain selector
+    event CrossChainSettlementSent(bytes32 indexed tradeId, bytes32 indexed messageId, uint64 destChainSelector);
+
     // ============ Errors ============
 
     /// @notice Thrown when a trade with the given ID does not exist
@@ -103,6 +110,15 @@ interface IOTCVault {
 
     /// @notice Thrown when encrypted parameters are empty
     error EmptyEncryptedParams();
+
+    /// @notice Thrown when the CCIP receiver is not configured for the destination chain
+    error ReceiverNotConfigured(uint64 chainSelector);
+
+    /// @notice Thrown when the contract has insufficient ETH to pay CCIP fees
+    error InsufficientCCIPFee(uint256 required, uint256 available);
+
+    /// @notice Thrown when a cross-chain trade has not timed out yet
+    error CrossChainNotTimedOut(bytes32 tradeId);
 
     // ============ External Functions ============
 
@@ -143,4 +159,24 @@ interface IOTCVault {
     /// @param tradeId The trade ID to query
     /// @return status The current trade status
     function getTradeStatus(bytes32 tradeId) external view returns (TradeStatus status);
+
+    // ============ CCIP Cross-Chain Functions ============
+
+    /// @notice Configure an allowed receiver contract on a destination chain
+    /// @param chainSelector The CCIP chain selector for the destination chain
+    /// @param receiver The authorized receiver contract address
+    function setAllowedReceiver(uint64 chainSelector, address receiver) external;
+
+    /// @notice Estimate the CCIP fee for a cross-chain settlement message
+    /// @param destChainSelector The destination chain selector
+    /// @param settlementData The encoded settlement instructions
+    /// @return fee The estimated fee in native ETH
+    function estimateCCIPFee(uint64 destChainSelector, bytes calldata settlementData)
+        external
+        view
+        returns (uint256 fee);
+
+    /// @notice Refund a cross-chain trade that timed out waiting for CCIP confirmation
+    /// @param tradeId The trade that timed out
+    function refundTimedOutCrossChain(bytes32 tradeId) external;
 }

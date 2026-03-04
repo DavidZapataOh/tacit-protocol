@@ -26,7 +26,7 @@ contract OTCVaultTest is Test {
     function setUp() public {
         // Deploy mock contracts
         forwarder = new MockKeystoneForwarder();
-        vault = new OTCVault(address(forwarder), owner);
+        vault = new OTCVault(address(forwarder), owner, address(0));
 
         // Deploy mock tokens
         usdc = new MockERC20("USD Coin", "USDC", 6);
@@ -86,7 +86,7 @@ contract OTCVaultTest is Test {
 
     function test_RevertIf_Constructor_ZeroForwarder() public {
         vm.expectRevert(IOTCVault.OnlyForwarder.selector);
-        new OTCVault(address(0), owner);
+        new OTCVault(address(0), owner, address(0));
     }
 
     // ============ createTradeETH ============
@@ -524,8 +524,8 @@ contract OTCVaultTest is Test {
     function test_RevertIf_OnReport_InvalidAction() public {
         _createAndMatchETH(tradeId, 10 ether, 5 ether);
 
-        // Action 2 is invalid (only 0=Settle and 1=Refund exist)
-        bytes memory report = abi.encode(tradeId, uint8(2), "");
+        // Action 3 is invalid (only 0=Settle, 1=Refund, 2=CrossChainSettle exist)
+        bytes memory report = abi.encode(tradeId, uint8(3), "");
         vm.expectRevert(IOTCVault.ZeroAmount.selector);
         forwarder.deliverReport(address(vault), emptyMetadata, report);
     }

@@ -23,4 +23,14 @@ library TacitConstants {
 
     /// @notice Report type identifier for attestation reports
     bytes32 constant REPORT_TYPE_ATTESTATION = keccak256("ATTESTATION");
+
+    /// @notice Timeout for cross-chain settlement via CCIP (1 hour)
+    /// @dev After this period, a CrossChainPending trade can be refunded
+    uint256 constant CROSS_CHAIN_TIMEOUT = 1 hours;
+
+    /// @notice Default gas limit for CCIP messages (data-only, no token transfer)
+    uint256 constant CCIP_GAS_LIMIT = 200_000;
+
+    /// @notice Gas limit for CCIP messages with token transfers
+    uint256 constant CCIP_GAS_LIMIT_WITH_TOKENS = 300_000;
 }
