@@ -1,0 +1,21 @@
+# ==========================================================================
+# TACIT CRE PROJECT SETTINGS
+# ==========================================================================
+# Project-specific settings for CRE CLI targets.
+# Private OTC settlement workflow with automated compliance.
+
+# ==========================================================================
+# Local simulation target
+local-simulation:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+
+# ==========================================================================
+# Testnet deployment target
+testnet:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
+    - chain-name: ethereum-testnet-sepolia-arbitrum-1
+      url: https://arbitrum-sepolia-rpc.publicnode.com

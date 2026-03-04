@@ -1,0 +1,23 @@
+# ==========================================================================
+# CRE WORKFLOW SETTINGS — Tacit Settlement
+# ==========================================================================
+# Workflow-specific settings for CRE CLI targets.
+# Each target defines the workflow name and artifact paths.
+
+# ==========================================================================
+local-simulation:
+  user-workflow:
+    workflow-name: "tacit-settlement-local"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config/config.local.json"
+    secrets-path: "../secrets.yaml"
+
+# ==========================================================================
+testnet:
+  user-workflow:
+    workflow-name: "tacit-settlement-testnet"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config/config.testnet.json"
+    secrets-path: "../secrets.yaml"

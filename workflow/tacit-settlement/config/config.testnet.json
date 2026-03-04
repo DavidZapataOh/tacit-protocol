@@ -1,0 +1,12 @@
+{
+	"evms": [
+		{
+			"otcVaultAddress": "0x0000000000000000000000000000000000000000",
+			"complianceRegistryAddress": "0x0000000000000000000000000000000000000000",
+			"chainSelectorName": "ethereum-testnet-sepolia",
+			"gasLimit": "500000"
+		}
+	],
+	"complianceApiBaseUrl": "https://tacit-compliance-api.workers.dev",
+	"owner": ""
+}
