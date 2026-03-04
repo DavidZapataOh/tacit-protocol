@@ -1,0 +1,27 @@
+{
+  "chainId": 11155111,
+  "chainName": "sepolia",
+  "contracts": {
+    "otcVault": "0xEC3ad86Ce60c09997Dfb2a644E32F1F3f5B9aD9c",
+    "complianceRegistry": "0xfc95bF700bb50B0E92F73b34E2fe52A027CC2147"
+  },
+  "config": {
+    "keystoneForwarder": "0x68905da737e5a11E3A93AB6CeC2eA8b145fce961",
+    "deployer": "0x68905da737e5a11E3A93AB6CeC2eA8b145fce961",
+    "ccipRouter": "0x0BF3dE8c5D3e8A2B34D2BEeB17ABfCeBaf363A59",
+    "linkToken": "0x779877A7B0D9E8603169DdbD7836e478b4624789",
+    "chainSelector": "16015286601757825753"
+  },
+  "deployment": {
+    "date": "2026-03-03",
+    "blockNumber": 10380318,
+    "txHashes": [
+      "0xfc95bF700bb50B0E92F73b34E2fe52A027CC2147",
+      "0xEC3ad86Ce60c09997Dfb2a644E32F1F3f5B9aD9c"
+    ]
+  },
+  "verification": {
+    "otcVault": "https://sepolia.etherscan.io/address/0xEC3ad86Ce60c09997Dfb2a644E32F1F3f5B9aD9c#code",
+    "complianceRegistry": "https://sepolia.etherscan.io/address/0xfc95bF700bb50B0E92F73b34E2fe52A027CC2147#code"
+  }
+}
