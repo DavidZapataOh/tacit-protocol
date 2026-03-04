@@ -7,6 +7,7 @@
 			"gasLimit": "500000"
 		}
 	],
-	"complianceApiBaseUrl": "https://tacit-compliance-api.workers.dev",
+	"sanctionsApiBaseUrl": "https://tacit-sanctions-api.tacit-protocol.workers.dev",
+	"kycApiBaseUrl": "https://tacit-kyc-api.tacit-protocol.workers.dev",
 	"owner": ""
 }

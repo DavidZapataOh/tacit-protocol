@@ -4,7 +4,17 @@
 	"main": "dist/main.js",
 	"private": true,
 	"scripts": {
-		"postinstall": "bun x cre-setup"
+		"postinstall": "bun x cre-setup",
+		"typecheck": "bun x tsc --noEmit",
+		"simulate": "cd .. && cre workflow simulate ./tacit-settlement -T local-simulation -e .env",
+		"simulate:testnet": "cd .. && cre workflow simulate ./tacit-settlement -T testnet -e .env",
+		"simulate:tx": "cd .. && cre workflow simulate ./tacit-settlement -T local-simulation -e .env --non-interactive --trigger-index 0 --evm-event-index 0 --evm-tx-hash",
+		"simulate:run": "bash ../scripts/run-simulation.sh",
+		"trade:happy": "bash ../scripts/create-test-trade.sh happy",
+		"trade:mismatch": "bash ../scripts/create-test-trade.sh mismatch",
+		"trade:sanctions": "bash ../scripts/create-test-trade.sh sanctions",
+		"secrets:upload": "cd .. && cre secrets upload -e .env",
+		"secrets:list": "cd .. && cre secrets list -e .env"
 	},
 	"license": "UNLICENSED",
 	"dependencies": {

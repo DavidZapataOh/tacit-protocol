@@ -10,5 +10,5 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true
 	},
-	"include": ["main.ts"]
+	"include": ["main.ts", "types.ts", "crypto.ts", "match.ts", "compliance.ts", "settlement.ts"]
 }

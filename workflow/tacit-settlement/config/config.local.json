@@ -1,12 +1,13 @@
 {
 	"evms": [
 		{
-			"otcVaultAddress": "0x0000000000000000000000000000000000000000",
-			"complianceRegistryAddress": "0x0000000000000000000000000000000000000000",
+			"otcVaultAddress": "0xEC3ad86Ce60c09997Dfb2a644E32F1F3f5B9aD9c",
+			"complianceRegistryAddress": "0xfc95bF700bb50B0E92F73b34E2fe52A027CC2147",
 			"chainSelectorName": "ethereum-testnet-sepolia",
 			"gasLimit": "500000"
 		}
 	],
-	"complianceApiBaseUrl": "https://tacit-compliance-api.workers.dev",
+	"sanctionsApiBaseUrl": "https://tacit-sanctions-api.tacit-protocol.workers.dev",
+	"kycApiBaseUrl": "https://tacit-kyc-api.tacit-protocol.workers.dev",
 	"owner": ""
 }
