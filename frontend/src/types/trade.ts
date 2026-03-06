@@ -11,6 +11,7 @@ export enum TradeStatus {
   Settled = 3,
   Refunded = 4,
   Expired = 5,
+  CrossChainPending = 6,
 }
 
 /** Trade parameters to encrypt client-side before deposit */

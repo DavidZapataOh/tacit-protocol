@@ -9,11 +9,11 @@ interface IComplianceRegistry {
     // ============ Structs ============
 
     /// @notice A compliance attestation for a trade
-    /// @dev Minimal by design — privacy is paramount. No amounts, no assets, no identities.
+    /// @dev Packed into 1 slot: verified (1 byte) + exists (1 byte) + timestamp (6 bytes) = 8 bytes
     struct Attestation {
-        bool verified; // Whether compliance verification passed
-        bool exists; // Whether an attestation exists for this trade
-        uint256 timestamp; // When the compliance check was performed
+        bool verified; // Whether compliance verification passed (1 byte)
+        bool exists; // Whether an attestation exists for this trade (1 byte)
+        uint48 timestamp; // When the compliance check was performed (6 bytes, good until year 8.9M)
     }
 
     // ============ Events ============

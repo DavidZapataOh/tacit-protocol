@@ -107,7 +107,7 @@ contract OTCVaultReceiverTest is Test {
         );
 
         vm.expectEmit(true, true, true, true);
-        emit OTCVaultReceiver.CrossChainSettlementReceived(TRADE_ID, MESSAGE_ID, alice, address(0), 1 ether);
+        emit OTCVaultReceiver.CrossChainSettlementReceived(TRADE_ID, MESSAGE_ID);
 
         vm.prank(router);
         receiver.ccipReceive(message);

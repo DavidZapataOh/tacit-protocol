@@ -52,15 +52,10 @@ contract OTCVaultReceiver is CCIPReceiver, ReentrancyGuard, Ownable2Step {
     /// @notice Emitted when a cross-chain settlement is executed on this chain
     /// @param tradeId The trade identifier from the source chain
     /// @param messageId The CCIP message that triggered this settlement
-    /// @param recipient The address that received the assets
-    /// @param token The token transferred (address(0) for ETH)
-    /// @param amount The amount transferred
+    /// @dev Privacy: does NOT emit recipient, token, or amount to prevent on-chain data leakage
     event CrossChainSettlementReceived(
         bytes32 indexed tradeId,
-        bytes32 indexed messageId,
-        address indexed recipient,
-        address token,
-        uint256 amount
+        bytes32 indexed messageId
     );
 
     /// @notice Emitted when an allowed sender is configured
@@ -195,9 +190,7 @@ contract OTCVaultReceiver is CCIPReceiver, ReentrancyGuard, Ownable2Step {
             IERC20(instruction.token).safeTransfer(instruction.recipient, instruction.amount);
         }
 
-        emit CrossChainSettlementReceived(
-            instruction.tradeId, message.messageId, instruction.recipient, instruction.token, instruction.amount
-        );
+        emit CrossChainSettlementReceived(instruction.tradeId, message.messageId);
     }
 
     // ═══════════════════════════════════════════════════════════════

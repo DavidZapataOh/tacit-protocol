@@ -107,7 +107,7 @@ contract OTCVaultTest is Test {
 
     function test_CreateTradeETH_EmitsTradeCreated() public {
         vm.expectEmit(true, true, true, true);
-        emit IOTCVault.TradeCreated(tradeId, alice, address(0), 10 ether);
+        emit IOTCVault.TradeCreated(tradeId);
 
         vm.prank(alice);
         vault.createTradeETH{value: 10 ether}(tradeId, aliceEncryptedParams);
@@ -151,7 +151,7 @@ contract OTCVaultTest is Test {
 
     function test_CreateTradeToken_EmitsTradeCreated() public {
         vm.expectEmit(true, true, true, true);
-        emit IOTCVault.TradeCreated(tradeId, alice, address(usdc), 25_000e6);
+        emit IOTCVault.TradeCreated(tradeId);
 
         vm.prank(alice);
         vault.createTradeToken(tradeId, address(usdc), 25_000e6, aliceEncryptedParams);
@@ -206,7 +206,7 @@ contract OTCVaultTest is Test {
         vault.createTradeETH{value: 10 ether}(tradeId, aliceEncryptedParams);
 
         vm.expectEmit(true, true, true, true);
-        emit IOTCVault.TradeMatched(tradeId, bob, address(0), 5 ether);
+        emit IOTCVault.TradeMatched(tradeId);
         vm.expectEmit(true, true, true, true);
         emit IOTCVault.BothPartiesDeposited(tradeId);
 
@@ -304,7 +304,7 @@ contract OTCVaultTest is Test {
         vault.createTradeETH{value: 10 ether}(tradeId, aliceEncryptedParams);
 
         vm.expectEmit(true, true, true, true);
-        emit IOTCVault.TradeMatched(tradeId, bob, address(usdc), 25_000e6);
+        emit IOTCVault.TradeMatched(tradeId);
         vm.expectEmit(true, true, true, true);
         emit IOTCVault.BothPartiesDeposited(tradeId);
 
@@ -526,7 +526,7 @@ contract OTCVaultTest is Test {
 
         // Action 3 is invalid (only 0=Settle, 1=Refund, 2=CrossChainSettle exist)
         bytes memory report = abi.encode(tradeId, uint8(3), "");
-        vm.expectRevert(IOTCVault.ZeroAmount.selector);
+        vm.expectRevert(abi.encodeWithSelector(IOTCVault.InvalidAction.selector, uint8(3)));
         forwarder.deliverReport(address(vault), emptyMetadata, report);
     }
 
@@ -607,7 +607,7 @@ contract OTCVaultTest is Test {
         vm.warp(block.timestamp + 24 hours + 1);
 
         vm.prank(bob);
-        vm.expectRevert(IOTCVault.OnlyForwarder.selector); // reuses OnlyForwarder error
+        vm.expectRevert(abi.encodeWithSelector(IOTCVault.OnlyDepositor.selector, tradeId));
         vault.claimExpiredRefund(tradeId);
     }
 

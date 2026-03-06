@@ -80,6 +80,16 @@ const MOCK_VERIFIED_WALLETS: Map<string, KYCRecord> = new Map([
       entity: "entity-party-b-sepolia",
     },
   ],
+  // Party B wallet 2 (Sepolia live tests) — accredited
+  [
+    "0xd53ad32ae97ce7e5636d65c9db8517c1cbce7a2d",
+    {
+      level: "accredited",
+      verifiedAt: "2026-03-01T00:00:00Z",
+      expiresAt: "2027-03-01T00:00:00Z",
+      entity: "entity-party-b-sepolia-2",
+    },
+  ],
   // Demo fail address — explicitly unverified
   [
     "0x0000000000000000000000000000000000000bad",

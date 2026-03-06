@@ -243,6 +243,7 @@ contract ComplianceRegistryTest is Test {
     }
 
     function testFuzz_OnReport_AnyTimestamp(uint256 timestamp) public {
+        timestamp = bound(timestamp, 0, type(uint48).max);
         _recordAttestation(tradeId1, true, timestamp);
 
         IComplianceRegistry.Attestation memory att = registry.getAttestation(tradeId1);

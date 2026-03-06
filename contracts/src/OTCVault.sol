@@ -45,6 +45,12 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     /// @notice Counter of total trades created
     uint256 private _tradeCount;
 
+    /// @notice Total escrowed ETH across all active trades (prevents rescueTokens from draining deposits)
+    uint256 private _totalEscrowedETH;
+
+    /// @notice Total escrowed amount per ERC-20 token (prevents rescueTokens from draining deposits)
+    mapping(address => uint256) private _totalEscrowedToken;
+
     /// @notice Allowed CCIP receiver contracts per destination chain
     mapping(uint64 => address) public allowedReceivers;
 
@@ -79,18 +85,20 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         Trade storage trade = _trades[tradeId];
         trade.tradeId = tradeId;
         trade.status = TradeStatus.Created;
-        trade.createdAt = block.timestamp;
-        trade.expiresAt = block.timestamp + TacitConstants.DEFAULT_TRADE_EXPIRY;
+        trade.createdAt = uint48(block.timestamp);
+        trade.expiresAt = uint48(block.timestamp + TacitConstants.DEFAULT_TRADE_EXPIRY);
 
         trade.partyA = Deposit({
-            depositor: msg.sender, token: address(0), amount: msg.value, encryptedParams: encryptedParams, exists: true
+            depositor: msg.sender, exists: true, token: address(0), amount: msg.value, encryptedParams: encryptedParams
         });
+
+        _totalEscrowedETH += msg.value;
 
         unchecked {
             ++_tradeCount;
         }
 
-        emit TradeCreated(tradeId, msg.sender, address(0), msg.value);
+        emit TradeCreated(tradeId);
 
         // INTERACTIONS: none (ETH received via msg.value)
     }
@@ -110,18 +118,20 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         Trade storage trade = _trades[tradeId];
         trade.tradeId = tradeId;
         trade.status = TradeStatus.Created;
-        trade.createdAt = block.timestamp;
-        trade.expiresAt = block.timestamp + TacitConstants.DEFAULT_TRADE_EXPIRY;
+        trade.createdAt = uint48(block.timestamp);
+        trade.expiresAt = uint48(block.timestamp + TacitConstants.DEFAULT_TRADE_EXPIRY);
 
         trade.partyA = Deposit({
-            depositor: msg.sender, token: token, amount: amount, encryptedParams: encryptedParams, exists: true
+            depositor: msg.sender, exists: true, token: token, amount: amount, encryptedParams: encryptedParams
         });
+
+        _totalEscrowedToken[token] += amount;
 
         unchecked {
             ++_tradeCount;
         }
 
-        emit TradeCreated(tradeId, msg.sender, token, amount);
+        emit TradeCreated(tradeId);
 
         // INTERACTIONS
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -142,12 +152,14 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
 
         // EFFECTS
         trade.partyB = Deposit({
-            depositor: msg.sender, token: address(0), amount: msg.value, encryptedParams: encryptedParams, exists: true
+            depositor: msg.sender, exists: true, token: address(0), amount: msg.value, encryptedParams: encryptedParams
         });
 
         trade.status = TradeStatus.BothDeposited;
 
-        emit TradeMatched(tradeId, msg.sender, address(0), msg.value);
+        _totalEscrowedETH += msg.value;
+
+        emit TradeMatched(tradeId);
         emit BothPartiesDeposited(tradeId);
 
         // INTERACTIONS: none (ETH received via msg.value)
@@ -172,12 +184,14 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
 
         // EFFECTS
         trade.partyB = Deposit({
-            depositor: msg.sender, token: token, amount: amount, encryptedParams: encryptedParams, exists: true
+            depositor: msg.sender, exists: true, token: token, amount: amount, encryptedParams: encryptedParams
         });
 
         trade.status = TradeStatus.BothDeposited;
 
-        emit TradeMatched(tradeId, msg.sender, token, amount);
+        _totalEscrowedToken[token] += amount;
+
+        emit TradeMatched(tradeId);
         emit BothPartiesDeposited(tradeId);
 
         // INTERACTIONS
@@ -193,13 +207,20 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
             revert InvalidTradeStatus(tradeId, trade.status, TradeStatus.Created);
         }
         if (block.timestamp <= trade.expiresAt) revert TradeNotExpired(tradeId);
-        if (msg.sender != trade.partyA.depositor) revert OnlyForwarder();
+        if (msg.sender != trade.partyA.depositor) revert OnlyDepositor(tradeId);
 
         // EFFECTS
         trade.status = TradeStatus.Expired;
         uint256 refundAmount = trade.partyA.amount;
         address refundToken = trade.partyA.token;
         address refundTo = trade.partyA.depositor;
+
+        // Update escrow tracking
+        if (refundToken == address(0)) {
+            _totalEscrowedETH -= refundAmount;
+        } else {
+            _totalEscrowedToken[refundToken] -= refundAmount;
+        }
 
         emit TradeRefunded(tradeId, "expired");
 
@@ -242,14 +263,14 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         } else if (actionRaw == uint8(ReportAction.CrossChainSettle)) {
             _executeCrossChainSettlement(trade, tradeId, data);
         } else {
-            revert ZeroAmount(); // invalid action — reuse error to avoid adding new one for hackathon
+            revert InvalidAction(actionRaw);
         }
     }
 
     // ============ Admin Functions ============
 
     /// @notice Emergency function to rescue accidentally sent tokens (NOT trade deposits)
-    /// @dev Only callable by owner. Does not track escrowed balances — use with care.
+    /// @dev Only callable by owner. Cannot withdraw escrowed trade deposits.
     /// @param token Token to rescue (address(0) for ETH)
     /// @param to Recipient address
     /// @param amount Amount to rescue
@@ -257,9 +278,13 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         if (to == address(0)) revert ETHTransferFailed(address(0), amount);
 
         if (token == address(0)) {
+            uint256 available = address(this).balance - _totalEscrowedETH;
+            if (amount > available) revert ZeroAmount();
             (bool success,) = to.call{value: amount}("");
             if (!success) revert ETHTransferFailed(to, amount);
         } else {
+            uint256 available = IERC20(token).balanceOf(address(this)) - _totalEscrowedToken[token];
+            if (amount > available) revert ZeroAmount();
             IERC20(token).safeTransfer(to, amount);
         }
     }
@@ -301,6 +326,10 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         uint256 amountA = trade.partyA.amount;
         uint256 amountB = trade.partyB.amount;
 
+        // Update escrow tracking
+        if (tokenA == address(0)) { _totalEscrowedETH -= amountA; } else { _totalEscrowedToken[tokenA] -= amountA; }
+        if (tokenB == address(0)) { _totalEscrowedETH -= amountB; } else { _totalEscrowedToken[tokenB] -= amountB; }
+
         emit TradeSettled(tradeId);
 
         // INTERACTIONS — DvP: Party A's assets -> Party B, Party B's assets -> Party A
@@ -338,6 +367,10 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
         address tokenB = trade.partyB.token;
         uint256 amountA = trade.partyA.amount;
         uint256 amountB = trade.partyB.amount;
+
+        // Update escrow tracking
+        if (tokenA == address(0)) { _totalEscrowedETH -= amountA; } else { _totalEscrowedToken[tokenA] -= amountA; }
+        if (tokenB == address(0)) { _totalEscrowedETH -= amountB; } else { _totalEscrowedToken[tokenB] -= amountB; }
 
         emit TradeRefunded(tradeId, reason);
 
@@ -394,6 +427,7 @@ contract OTCVault is IOTCVault, IReceiver, ReentrancyGuard, Ownable2Step {
     function setAllowedReceiver(uint64 chainSelector, address receiver) external onlyOwner {
         if (receiver == address(0)) revert ZeroDeposit();
         allowedReceivers[chainSelector] = receiver;
+        emit AllowedReceiverSet(chainSelector, receiver);
     }
 
     /// @inheritdoc IOTCVault

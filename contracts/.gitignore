@@ -5,6 +5,7 @@ broadcast/
 
 # Environment
 .env
+.env.e2e
 
 # OS
 .DS_Store

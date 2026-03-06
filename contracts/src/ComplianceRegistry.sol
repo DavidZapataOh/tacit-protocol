@@ -57,7 +57,7 @@ contract ComplianceRegistry is IComplianceRegistry, IReceiver, Ownable2Step {
         if (_attestations[tradeId].exists) revert AttestationAlreadyExists(tradeId);
 
         // EFFECTS
-        _attestations[tradeId] = Attestation({verified: result, exists: true, timestamp: timestamp});
+        _attestations[tradeId] = Attestation({verified: result, exists: true, timestamp: uint48(timestamp)});
 
         _attestedTradeIds.push(tradeId);
 

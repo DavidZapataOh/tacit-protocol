@@ -23,39 +23,37 @@ interface IOTCVault {
     // ============ Structs ============
 
     /// @notice Represents one side of a trade deposit
+    /// @dev Packed: `depositor` (20 bytes) + `exists` (1 byte) share slot 0
     struct Deposit {
-        address depositor; // Address that made the deposit
+        address depositor; // Address that made the deposit (20 bytes)
+        bool exists; // Whether this deposit exists (1 byte) — packed with depositor
         address token; // Token address (address(0) for ETH)
         uint256 amount; // Amount deposited
         bytes encryptedParams; // Trade parameters encrypted with Vault DON public key
-        bool exists; // Whether this deposit exists
     }
 
     /// @notice Represents a complete trade between two counterparties
+    /// @dev Packed: `status` (1 byte) + `createdAt` (6 bytes) + `expiresAt` (6 bytes) share one slot
     struct Trade {
         bytes32 tradeId; // Unique trade identifier
         Deposit partyA; // Party A's deposit
         Deposit partyB; // Party B's deposit
-        TradeStatus status; // Current trade status
-        uint256 createdAt; // Timestamp of trade creation
-        uint256 expiresAt; // Timestamp when trade expires if Party B hasn't deposited
+        TradeStatus status; // Current trade status (1 byte)
+        uint48 createdAt; // Timestamp of trade creation (6 bytes, good until year 8.9M)
+        uint48 expiresAt; // Timestamp when trade expires (6 bytes)
     }
 
     // ============ Events ============
 
     /// @notice Emitted when Party A creates a new trade and deposits
     /// @param tradeId The unique trade identifier
-    /// @param partyA Address of the trade creator
-    /// @param token Token deposited (address(0) for ETH)
-    /// @param amount Amount deposited
-    event TradeCreated(bytes32 indexed tradeId, address indexed partyA, address token, uint256 amount);
+    /// @dev Privacy: does NOT emit amounts, tokens, or depositor address to prevent on-chain data leakage
+    event TradeCreated(bytes32 indexed tradeId);
 
     /// @notice Emitted when Party B matches a trade and deposits
     /// @param tradeId The unique trade identifier
-    /// @param partyB Address of the matching counterparty
-    /// @param token Token deposited (address(0) for ETH)
-    /// @param amount Amount deposited
-    event TradeMatched(bytes32 indexed tradeId, address indexed partyB, address token, uint256 amount);
+    /// @dev Privacy: does NOT emit amounts, tokens, or depositor address to prevent on-chain data leakage
+    event TradeMatched(bytes32 indexed tradeId);
 
     /// @notice Emitted when both parties have deposited, triggering the CRE workflow
     /// @param tradeId The unique trade identifier
@@ -119,6 +117,17 @@ interface IOTCVault {
 
     /// @notice Thrown when a cross-chain trade has not timed out yet
     error CrossChainNotTimedOut(bytes32 tradeId);
+
+    /// @notice Thrown when only the depositor can perform the action
+    error OnlyDepositor(bytes32 tradeId);
+
+    /// @notice Thrown when an invalid report action is received
+    error InvalidAction(uint8 action);
+
+    /// @notice Emitted when an allowed CCIP receiver is configured
+    /// @param chainSelector The destination chain selector
+    /// @param receiver The authorized receiver contract address
+    event AllowedReceiverSet(uint64 indexed chainSelector, address indexed receiver);
 
     // ============ External Functions ============
 

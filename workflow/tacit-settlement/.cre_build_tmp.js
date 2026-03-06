@@ -16055,9 +16055,21 @@ var IRECEIVER_ABI = [
 function encodeSettlementReport(tradeId, action, reason) {
   return encodeAbiParameters([{ type: "bytes32" }, { type: "uint8" }, { type: "string" }], [tradeId, action, reason]);
 }
+function encodeSettlementInstruction(tradeId, recipient, token, amount) {
+  return encodeAbiParameters([{ type: "bytes32" }, { type: "address" }, { type: "address" }, { type: "uint256" }], [tradeId, recipient, token, amount]);
+}
+function encodeCrossChainReport(tradeId, destChainSelector, settlementPayload) {
+  const crossChainData = encodeAbiParameters([{ type: "uint64" }, { type: "bytes" }], [destChainSelector, settlementPayload]);
+  return encodeAbiParameters([{ type: "bytes32" }, { type: "uint8" }, { type: "bytes" }], [tradeId, 2, crossChainData]);
+}
 function encodeAttestationReport(tradeId, result, timestamp) {
   return encodeAbiParameters([{ type: "bytes32" }, { type: "bool" }, { type: "uint256" }], [tradeId, result, BigInt(timestamp)]);
 }
+var SEPOLIA_CHAIN_ID = 11155111;
+var CHAIN_ID_TO_CCIP_SELECTOR = {
+  11155111: BigInt("16015286601757825753"),
+  421614: BigInt("3478487238524512106")
+};
 var BOTH_PARTIES_DEPOSITED_TOPIC = "0x7bda33a9fd14a201ddd6a6a589e3d4a35d42ff709512c7ec4fe93aaac146cc00";
 var configSchema = exports_external.object({
   evms: exports_external.array(exports_external.object({
@@ -16224,6 +16236,24 @@ var onBothPartiesDeposited = (runtime2, payload) => {
   }
   runtime2.log("[Tacit] ALL COMPLIANCE CHECKS PASSED — proceeding to settlement");
   runtime2.log("[Tacit] Step 6: Executing settlement + writing attestation...");
+  const isCrossChain = paramsA.destinationChain !== SEPOLIA_CHAIN_ID || paramsB.destinationChain !== SEPOLIA_CHAIN_ID;
+  if (isCrossChain) {
+    runtime2.log("[Tacit] CROSS-CHAIN settlement detected");
+    const crossChainParty = paramsA.destinationChain !== SEPOLIA_CHAIN_ID ? "A" : "B";
+    const destChainId = crossChainParty === "A" ? paramsA.destinationChain : paramsB.destinationChain;
+    const destChainSelector = CHAIN_ID_TO_CCIP_SELECTOR[destChainId];
+    if (!destChainSelector) {
+      throw new Error(`[Tacit] Unsupported destination chain: ${destChainId}`);
+    }
+    const recipient = crossChainParty === "A" ? partyAAddress : partyBAddress;
+    const amount = crossChainParty === "A" ? trade.partyB.amount : trade.partyA.amount;
+    runtime2.log(`[Tacit] Cross-chain party: ${crossChainParty} → chain ${destChainId}`);
+    runtime2.log(`[Tacit] Recipient: ${recipient}, Amount: ${amount}`);
+    writeCrossChainReports(runtime2, evmClient, evmConfig, tradeIdHex, destChainSelector, recipient, amount, true);
+    runtime2.log(`[Tacit] Workflow complete for trade ${tradeIdHex} — cross-chain settlement initiated`);
+    return "cross-chain-settlement-initiated";
+  }
+  runtime2.log("[Tacit] Same-chain settlement");
   writeReports(runtime2, evmClient, evmConfig, tradeIdHex, 0, "", true);
   runtime2.log(`[Tacit] Workflow complete for trade ${tradeIdHex} — all 6 steps done`);
   return "settlement-complete";
@@ -16269,6 +16299,46 @@ function writeReports(runtime2, evmClient, evmConfig, tradeIdHex, action, reason
   }
   runtime2.log("[Tacit] Attestation written to ComplianceRegistry via KeystoneForwarder");
   runtime2.log(`[Tacit] Public sees ONLY: Trade ${tradeIdHex} | Compliance: ${compliancePassed ? "PASS" : "FAIL"}`);
+}
+function writeCrossChainReports(runtime2, evmClient, evmConfig, tradeIdHex, destChainSelector, recipient, amount, compliancePassed) {
+  runtime2.log("[Tacit] Step 6a: Writing CROSS-CHAIN settlement report to OTCVault...");
+  const settlementPayload = encodeSettlementInstruction(tradeIdHex, recipient, "0x0000000000000000000000000000000000000000", amount);
+  const crossChainPayload = encodeCrossChainReport(tradeIdHex, destChainSelector, settlementPayload);
+  runtime2.log(`[Tacit] Cross-chain report: destSelector=${destChainSelector} recipient=${recipient}`);
+  const crossChainCallData = encodeFunctionData({
+    abi: IRECEIVER_ABI,
+    functionName: "onReport",
+    args: ["0x", crossChainPayload]
+  });
+  const crossChainReport = runtime2.report(prepareReportRequest(crossChainCallData)).result();
+  runtime2.log("[Tacit] Cross-chain settlement report signed by DON");
+  const crossChainResp = evmClient.writeReport(runtime2, {
+    receiver: evmConfig.otcVaultAddress,
+    report: crossChainReport
+  }).result();
+  if (crossChainResp.txStatus !== TxStatus.SUCCESS) {
+    throw new Error(`[Tacit] Cross-chain settlement report to OTCVault failed: ${crossChainResp.errorMessage}`);
+  }
+  runtime2.log("[Tacit] Cross-chain settlement report written — CCIP message sent");
+  runtime2.log("[Tacit] Step 6b: Writing compliance attestation...");
+  const timestamp = Math.floor(Date.now() / 1000);
+  const attestationPayload = encodeAttestationReport(tradeIdHex, compliancePassed, timestamp);
+  runtime2.log(`[Tacit] Attestation: tradeId=${tradeIdHex} compliance=${compliancePassed ? "PASS" : "FAIL"} timestamp=${timestamp}`);
+  const attestationCallData = encodeFunctionData({
+    abi: IRECEIVER_ABI,
+    functionName: "onReport",
+    args: ["0x", attestationPayload]
+  });
+  const attestationReport = runtime2.report(prepareReportRequest(attestationCallData)).result();
+  runtime2.log("[Tacit] Attestation report signed by DON");
+  const attestationResp = evmClient.writeReport(runtime2, {
+    receiver: evmConfig.complianceRegistryAddress,
+    report: attestationReport
+  }).result();
+  if (attestationResp.txStatus !== TxStatus.SUCCESS) {
+    throw new Error(`[Tacit] Attestation report to ComplianceRegistry failed: ${attestationResp.errorMessage}`);
+  }
+  runtime2.log("[Tacit] Attestation written to ComplianceRegistry via KeystoneForwarder");
 }
 var initWorkflow = (config) => {
   const evmConfig = config.evms[0];
