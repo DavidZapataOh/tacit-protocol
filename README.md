@@ -228,8 +228,8 @@ Built with Next.js 14, wagmi v2, viem, RainbowKit, TailwindCSS, and shadcn/ui.
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tacit.git
-cd tacit
+git clone https://github.com/DavidZapataOh/tacit-protocol.git
+cd tacit-protocol
 ```
 
 ### 2. Build and test contracts
