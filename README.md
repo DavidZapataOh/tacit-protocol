@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/tacit.svg" alt="Tacit Protocol" width="100%" />
+  <img src="img/tacit.svg" alt="Tacit Protocol" width="20%" />
 </p>
 
 <h1 align="center">Tacit</h1>
